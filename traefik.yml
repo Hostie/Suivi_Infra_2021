@@ -17,4 +17,4 @@ providers:
     endpoint: unix:///var/run/docker.sock
     watch: true
     exposedByDefault: true
-    defaultRule: "HostRegexp(`{{ index .Labels \"com.docker.compose.service\"}}.traefik.me`,`{{ index .Labels \"com.docker.compose.service\"}}-{dashed-ip:.*}.traefik.me`)"
+    defaultRule: "HostRegexp(`{{ index .Labels \"com.docker.compose.service\"}}.ledylan.fr`,`{{ index .Labels \"com.docker.compose.service\"}}-{dashed-ip:.*}.ledylan.fr`)"

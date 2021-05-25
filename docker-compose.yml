@@ -7,8 +7,16 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "8080:8080"
     labels:
       - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.https_redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https_redirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.http_catchall.rule=HostRegexp(`{any:.+}`)"
+      - "traefik.http.routers.http_catchall.entrypoints=http"
+      - "traefik.http.routers.http_catchall.middlewares=https_redirect"
+
+      
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml
       - ./tls.yml:/etc/traefik/tls.yml
@@ -34,6 +42,8 @@ services:
    environment:
      SERVER_NAME : kibana
      ELASTICSEARCH_URL : http://elasticsearch:9200
+   labels:
+     - "traefik.http.routers.blog.tls=true"  
    networks:
      - net
  
@@ -45,18 +55,18 @@ services:
    volumes:
      - certs:/etc/ssl/traefik
     
- proxy:
-   build : ./nginx
-   container_name : proxy
-   ports:
-     - "8080:80"
-   labels:
-     - "traefik.http.routers.app1.rule=Host(`hostie.ledylan.fr`)"
-     - "traefik.http.routers.app1-tls.tls.domains[0].main=hostie.ledylan.fr"
-     - "traefik.http.routers.app1-tls.tls.domains[0].sans=hostie-*.ledylan.fr"
-     - "traefik.http.routers.blog.tls=true"
-   networks:
-     - net
+ #proxy:
+  # build : ./nginx
+   #container_name : proxy
+   #ports:
+    # - ""
+   #labels:
+    # - "traefik.http.routers.app1.rule=Host(`hostie.ledylan.fr`)"
+     #- "traefik.http.routers.app1-tls.tls.domains[0].main=hostie.ledylan.fr"
+     #- "traefik.http.routers.app1-tls.tls.domains[0].sans=hostie-*.ledylan.fr"
+     #- "traefik.http.routers.blog.tls=true"
+   #networks:
+    # - net
 
 
 volumes:
