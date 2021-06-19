@@ -16,7 +16,6 @@ services:
       - "traefik.http.routers.http_catchall.rule=HostRegexp(`{any:.+}`)"
       - "traefik.http.routers.http_catchall.entrypoints=http"
       - "traefik.http.routers.http_catchall.middlewares=https_redirect"
-  
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml
       - ./tls.yml:/etc/traefik/tls.yml
@@ -48,15 +47,15 @@ services:
      - net
 
  metricbeat:
-   image: docker.elastic.co/beats/metricbeat:7.11.1
-   environment:
-     ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+   build: .
+   restart: unless-stopped
+   pid: host
    volumes:
-      - metricbeat-data01:/usr/share/metricbeat/data
-   networks:
-     - net
+     - ./metricbeat.yml:/metricbeat/metricbeat.yml
    depends_on:
      - elasticsearch
+   environment:
+    - ELASTICSEARCH_URL=http://elasticsearch:9200
  
  reverse-proxy-https-helper:
    image: alpine
@@ -65,9 +64,23 @@ services:
       && wget traefik.me/privkey.pem -O privkey.pem"
    volumes:
      - certs:/etc/ssl/traefik
+
+ app:
+    container_name: docker-node-mongo
+    restart: unless-stopped
+    build: .
+    ports:
+      - '3000:3000'
+    external_links:
+      - mongo
+   
+ mongo:
+    container_name: mongo
+    image: mongo
+    ports:
+      - '27017:27017'
     
-
-
+ 
 volumes:
    esdata:
      driver: local
