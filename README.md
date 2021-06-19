@@ -143,3 +143,182 @@ reverse-proxy-https-helper:
    volumes:
      - certs:/etc/ssl/traefik
 ```
+
+## Application Node
+
+Pour récupérer des métriques d'une base données, j'ai décidé de créer une application Node simple, reposant sur le principe d'une "To do list" qui enverra ses données à la base de données mongo. Cette application repose sur 3 fichiers de configurations simples
+
+
+ 1 - index.js
+
+```
+const express = require('express');
+const mongoose = require('mongoose');
+
+const app = express();
+
+app.set('view engine', 'ejs');
+
+app.use(express.urlencoded({ extended: false }));
+
+// Connect to MongoDB
+mongoose
+  .connect(
+    'mongodb://mongo:27017/docker-node-mongo',
+    { useNewUrlParser: true }
+  )
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log(err));
+
+const Item = require('./models/Item');
+
+app.get('/', (req, res) => {
+  Item.find()
+    .then(items => res.render('index', { items }))
+    .catch(err => res.status(404).json({ msg: 'No items found' }));
+});
+
+app.post('/item/add', (req, res) => {
+  const newItem = new Item({
+    name: req.body.name
+  });
+
+  newItem.save().then(item => res.redirect('/'));
+});
+
+const port = 3000;
+
+app.listen(port, () => console.log('Server running...'));
+
+```
+
+Ce fichier permet de configurer la connexion à la MongoDB localement. Puis s'attèle à definir une fonction "get" et une fonction "post" pour récupérer et rentrer les données saisies dans l'application dans la Mongo.
+
+Dans ce fichier nous définissons également le port sur lequel le serveur node écoutera, ici le port 3000. Et nous créeons également un lien vers le visuel de l'application situé dans le fichier views/index.ejs
+
+
+ 2 - views/index.ejs 
+ 
+ Ce fichier est codé en ejs pour sa simplicité d'écriture. Il prend la forme suivante
+ 
+ ```
+ <!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>My Node App</title>
+</head>
+
+<body>
+  <h1>My Node App</h1>
+  <form method="post" action="/item/add">
+    <label for="name">Name</label>
+    <input type="text" name="name">
+    <input type="submit" value="Add">
+  </form>
+  <h4>Items:</h4>
+  <ul>
+    <% items.forEach(function(item) { %>
+      <li>
+        <%= item.name %>
+      </li>
+      <% }); %>
+  </ul>
+</body>
+
+</html>
+ 
+ ```
+
+La vue de notre application vient tout simplement récupérer les données de la class Items que nous expliquerons par la suite. Elle permet donc la récupération des données et la possibilité de rentrer de nouveaux inputs en base de données. 
+
+
+3- models/Items.js
+
+Ce fichier nous permet de créer un schéma simple pour pouvoir saisir des entrées en base de données. Deux entrées sont configurées. 
+
+L'entrée "name" est une string permettant de contenir le texte saisi. L'entrée "date" nous permet de saisir l'heure à laquelle a été saisie le message. 
+
+```
+const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
+
+const ItemSchema = new Schema({
+  name: {
+    type: String,
+    required: true
+  },
+  date: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+module.exports = Item = mongoose.model('item', ItemSchema);
+
+```
+
+
+4- Le conteneur
+
+Une fois l'application codée, il nous faut créer un conteneur pour pouvoir la lancer. 
+
+Le conteneur écoute sur le port 3000 (le port 80 étant déjà occupé). Nous créeons également un lien vers notre conteneur mongo graĉe à la commande "external_links"
+
+Le "build ." permet d'aller récuperer le Dockerfile et de build le conteneur grâce à lui
+
+```
+app:
+    container_name: docker-node-mongo
+    restart: unless-stopped
+    build: .
+    ports:
+      - '3000:3000'
+    external_links:
+      - mongo
+```
+
+Le "build ." permet d'aller récuperer le Dockerfile et de build le conteneur grâce à lui
+
+Le Dockerfile prend la forme suivante :
+
+```
+FROM node:10
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["npm", "start"]
+```
+
+Il récupérer l'image officielle node:10, créer un espace de travail, copie le package.json et lance la commande npm install qui permet de telecharger les nodes modules qui feront tourner l'application. Il ouvre le port 3000 et lance la commande ```npm start``` qui permet de lancer l'appplciation node. 
+
+
+## MongoDB
+
+Le conteneur MongoDB va nous permettre de créer un sevreur de base de données Mongo qui va pouvoir stocker localement et avec persistance les données saisies dans l'application Node.
+
+Il prend la forme suivante : 
+
+```
+ mongo:
+    container_name: mongo
+    image: mongo
+    ports:
+      - '27017:27017'
+```
+
+Nous récupérons l'image docker mongo et nous ouvrons le port 27017 qui est le port naturel de Mongo. 
+
+
+
