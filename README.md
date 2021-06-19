@@ -2,7 +2,7 @@
 
 # Projet 
 
-Le projet consiste en une infrastructure conteneurisée permettant la récupération de métriques d'une API. Elle repose sur la technologie Docker et sur différentes technologies : Traeffik, Elastic Search, Kibana, Node et Metricbeat
+Le projet consiste en une infrastructure conteneurisée permettant la récupération de métriques d'une MongoDB. Elle repose sur la technologie Docker et sur différentes technologies : Traeffik, Elastic Search, Kibana, Node et Metricbeat
 
 # Pré-requis
 
