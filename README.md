@@ -24,6 +24,7 @@ make setup
 make start-monitoring-host
 make start-monitoring
 make start-all
+docker-compose.yml
 ```
 
 Une fois l'application lancée, rendez vous à l'aide de votre navigateur à l'adresse suivante : https://kibana.ledylan.fr pour accéder à Elastic Search.
