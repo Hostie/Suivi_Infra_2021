@@ -15,7 +15,7 @@ Le projet consiste en une infrastructure conteneurisée permettant la récupéra
 
 Après avoir intaller le binaire Docker sur votre machine (https://docs.docker.com/engine/install/ubuntu/), clonez le projet sur votre machine via la commande :
 
-``` https://github.com/Hostie/Suivi_Infra_2021.git ```
+``` git clone https://github.com/Hostie/Suivi_Infra_2021.git ```
 
 Une fois dans le dossier lancer l'application avec la commande
 
