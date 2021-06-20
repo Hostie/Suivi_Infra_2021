@@ -18,22 +18,138 @@ Après avoir intaller le binaire Docker sur votre machine (https://docs.docker.c
 Une fois dans le dossier lancer l'application avec la commande
 
 ```
-docker-compose build
-docker-compose up 
+make setup
+make start-monitoring-host
+make start-monitoring
+make start-all
 ```
 
 Une fois l'application lancée, rendez vous à l'aide de votre navigateur à l'adresse suivante : https://kibana.ledylan.fr pour accéder à Elastic Search.
 
-
 # Configuration
 
-Tous d'abord nous allons aborder la configuration des différents conteneurs. Leur définition est réalisé dans un document appelé docker-compose.yml. C'est ce fichier qui est appelé lors du ```docker-compose up```.
+## Makefile
+
+Tout d'abord pour nous faciliter la tâcher dans la configuration et le déploiement de nos conteneurs il peut être intéressant de créer un fichier Makefile. Ce fichier nous permet de créer des raccourcis pour executer plus rapidement un ensemble de commandes qui seraient fastidieuses. Il permet égalmeent de commettre moins d'erreur, il suffit de le configurer une fois. Il facilitera également le travail des personnes qui utiliseront l'infrastructure. 
+
+Il prend la forme suivante : 
+
+
+```
+# =========================================== MONITORING ===============================================================
+
+# ----------------------- SETUP -------------------------------------------------------------------
+setup:
+	@./scripts/setup.sh
+
+# ----------------------- KIBANA -------------------------------------------------------------------
+start-kibana:
+	@docker-compose up -d kibana
+stop-kibana:
+	@docker-compose stop kibana
+
+# ------------------- ELASTICSEARCH ----------------------------------------------------------------
+start-elasticsearch:
+	@docker-compose up -d elasticsearch
+stop-elasticsearch:
+	@docker-compose stop elasticsearch
+
+
+# ------------------- METRICBEAT -------------------------------------------------------------------
+stop-metricbeat:
+	@echo "== Stopping METRICBEAT=="
+	@docker-compose stop metricbeat
+
+# ------------------- MONITORING -------------------------------------------------------------------
+create-network:
+	@docker network create net || true
+remove-network:
+	@docker network rm net
+
+start-monitoring: create-network start-elasticsearch start-kibana
+	@docker-compose up -d metricbeat
+	@echo "================= Monitoring STARTED !!!"
+
+stop-monitoring: stop-metricbeat
+	@docker-compose stop
+	@echo "================= Monitoring STOPPED !!!"
+
+stop-monitoring-host:
+	@docker-compose stop metricbeat-host
+	@docker-compose rm -f metricbeat-host || true
+
+start-monitoring-host: start-elasticsearch start-kibana
+	@docker-compose up -d metricbeat-host
+
+build:
+	@docker-compose build
+
+
+# =================================================== MONGODB ==========================================================
+compose-mongodb=docker-compose -f docker-compose.mongodb.yml -p mongodb
+start-mongodb:
+	@$(compose-mongodb) up -d mongodb
+stop-mongodb:
+	@$(compose-mongodb) stop mongodb
+
+
+start-all: start-mongodb 
+
+stop-all: stop-mongodb 
+
+clean:
+	@./scripts/clean.sh
+
+
+install: clean setup start-monitoring-host start-monitoring start-all
+
+```
+
+Ici l'ensemble des raccourcis s'executent de la manière suivante. Nous commencons la commande par l'entrée ```make``` auquelle nous rajouterons la commande associée.
+
+Par exemple si je souhaite lancer mon conteneur MongoDB il nous suffira de rentrer la commande ``` make start-mongodb ```
+
+
+### Les scripts 
+
+Ce Makefile est également associé à deux scripts nous permettant tantôt de nettoyer nos images et tantôt de setup notre configuration
+
+scripts/clean.sh
+
+```
+#!/usr/bin/env bash
+
+CONTAINERS=`docker ps | grep metricbeat | awk '{print $1}'`
+[ ! -z "${CONTAINERS}" ] && docker rm -f ${CONTAINERS}
+echo "All METRICBEAT containers removed !"
+docker network rm net 2>&1 > /dev/null || true
+exit 0
+```
+
+scripts/setup.sh
+
+```
+#!/usr/bin/env bash
+
+sudo setfacl -m u:1000:rw /var/run/docker.sock && echo "=> ACLs on /var/run/docker.sock OK"
+sudo sysctl -w vm.max_map_count=262144 && echo "=> vm.max_map_count=262144 OK"
+docker network create metricbeat || true
+docker-compose build
+```
+
+Les deux premieres commandes sont necessaires au démarrage de metricbeat et d'Elasticsearch. La commande "docker network" nous permet de créer le réseau metricbeat commun à tous les conteneurs. Et pour finir le script lance le build de l'infrastructure.
+
+
+
+
+## Les conteneurs
+
+Tous d'abord nous allons aborder la configuration des différents conteneurs. Leurs définitions sont réalisés dans un document appelé docker-compose.yml. C'est ce fichier qui est appelé lors des commandes cités précedemment.
 
 Le docker-compose.yml prend la forme suivante : 
 
 
 ```
-
 
 ```
 
@@ -41,29 +157,53 @@ Le docker-compose.yml prend la forme suivante :
 
 ## Elastic Search
 
-Le conteneur Elastic Search va permettre de deployer l'application Elastic Search qui nous permettra d'obtenir tous les outils nécessaires au visionnage des métriques. Il écoute aau port 9200
+Le conteneur Elastic Search va permettre de deployer l'application Elastic Search qui nous permettra d'obtenir tous les outils nécessaires au visionnage des métriques.
 
 Le conteneur est défini de la manière suivante : 
 
 ```
  elasticsearch:
    build : ./elasticsearch
-   container_name: elasticsearch
+   ports: 
+    - '9222:9200'
+   container_name: metricbeat-elasticsearch
    environment:
      - "discovery.type=single-node"
+     - cluster.name=docker-cluster
+     - bootstrap.memory_lock=true
+     - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
    networks:
-     - net
+     - metricbeat
    volumes:
-     - esdata:/usr/share/elasticsearch/data 
+     - ./config/usr/share/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
 ```
 
-L'image d'Elasticsearch va être cherché via la commande build dans le DockerFile dédié à ce conteneur :
+L'image d'Elasticsearch va être cherchée via la commande build dans le DockerFile dédié à ce conteneur. 
 
 elasticsearch/Dockerfile
 
 ```FROM docker.elastic.co/elasticsearch/elasticsearch:7.12.1 ```
 
-Nous allons également prevoir un volume pour stocker les datas d'ElasticSearch dans le conteneur;
+La commande volumes va nous permettre de transferer la configuration initiale d'Elastic Search dans le conteneur. Le fichier de configuration initiale prend cette forme : 
+
+```
+cluster.name: "docker-cluster"
+network.host: 0.0.0.0
+
+# minimum_master_nodes need to be explicitly set when bound on a public IP
+# set to 1 to allow single node clusters
+# Details: https://github.com/elastic/elasticsearch/pull/17288
+discovery.zen.minimum_master_nodes: 1
+xpack.license.self_generated.type: basic
+
+xpack.security.authc:
+  anonymous:
+    username: metricbeat_anonymous_user
+    roles: superuser
+    authz_exception: true
+```
+
+Nous définissons le nom du cluster, l'url d'elasisearch, le username de l'utilisateur par défaut  auquel nous n'attachons pas de mot de passe et nous ouvrons l'host à 0.0.0.0 pour autoriser toutes les connexions depuis n'importe quelle IP. Nous lui donnons également les droits de superuser qui s'apparentent à des droits admins.
 
 
 ## Kibana
@@ -73,21 +213,37 @@ Le conteneur Kibana permet d'accéder à la suite KIbana qui permet la visualisa
 ```
  kibana:
    build : ./kibana
-   container_name: kibana
+   container_name: metricbeat-kibana
+   ports: 
+    - '5666:5601'
    environment:
      SERVER_NAME : kibana
      ELASTICSEARCH_URL : http://elasticsearch:9200
+   volumes:
+    - ./config/opt/kibana/config/kibana.yml:/opt/kibana/config/kibana.yml:ro
    labels:
      - "traefik.http.routers.blog.tls=true"  
    networks:
-     - net
+     - metricbeat
 ```
 
-Le build de l'image se fait de la même manière qu'Elastic Search via le Dockerfile dédié.
+La commande volumes va nous permettre de transferer la cofniguration initiale de Kibana dans le conteneur. Le fichier de configuration initiale prend cette forme : 
+
+```
+server.name: kibana
+server.host: "0"
+elasticsearch.url: http://elasticsearch:9200
+elasticsearch.username: metricbeat_anonymous_user
+#elasticsearch.password: ""
+xpack.monitoring.ui.container.elasticsearch.enabled: true
+
+```
+Nous définissons le nom du serveur, l'url d'elasisearch, le username de l'utilisateur par défaut auquel nous n'attachons pas de mot de passe et nous ouvrons l'host à 0.0.0.0 pour autoriser toutes les connexions depuis n'importe quelle IP. 
+
 
 kibana/Dockerfile
 
-``` FROM docker.elastic.co/kibana/kibana:7.12.0 ```
+``` FROM docker.elastic.co/kibana/kibana:6.0.0 ```
 
 ## Traefik
 
@@ -116,14 +272,13 @@ Le conteneur est accessible à l'adresse suivante : http//127.0.0.1/80
       - "traefik.http.routers.http_catchall.rule=HostRegexp(`{any:.+}`)"
       - "traefik.http.routers.http_catchall.entrypoints=http"
       - "traefik.http.routers.http_catchall.middlewares=https_redirect"
-  
     volumes:
-      - ./traefik.yml:/etc/traefik/traefik.yml
-      - ./tls.yml:/etc/traefik/tls.yml
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./traefik/tls.yml:/etc/traefik/tls.yml
       - /var/run/docker.sock:/var/run/docker.sock
       - certs:/etc/ssl/traefik
     networks:
-      - net 
+      - metricbeat 
 ```
 
 Les labels nous permettent de configurer notre redirection automatique en https avec la methode appelé Let's Encrypt de Traefik. 
@@ -149,7 +304,7 @@ reverse-proxy-https-helper:
 Pour récupérer des métriques d'une base données, j'ai décidé de créer une application Node simple, reposant sur le principe d'une "To do list" qui enverra ses données à la base de données mongo. Cette application repose sur 3 fichiers de configurations simples
 
 
- 1 - index.js
+ 1 - node/index.js
 
 ```
 const express = require('express');
@@ -271,17 +426,18 @@ Le conteneur écoute sur le port 3000 (le port 80 étant déjà occupé). Nous c
 Le "build ." permet d'aller récuperer le Dockerfile et de build le conteneur grâce à lui
 
 ```
-app:
+
+ app:
     container_name: docker-node-mongo
     restart: unless-stopped
-    build: .
+    build: ./node
     ports:
       - '3000:3000'
     external_links:
-      - mongo
+      - mongodb
 ```
 
-Le "build ." permet d'aller récuperer le Dockerfile et de build le conteneur grâce à lui
+Le "build " permet d'aller récuperer le Dockerfile et de build le conteneur grâce à lui
 
 Le Dockerfile prend la forme suivante :
 
@@ -306,19 +462,217 @@ Il récupérer l'image officielle node:10, créer un espace de travail, copie le
 
 ## MongoDB
 
-Le conteneur MongoDB va nous permettre de créer un sevreur de base de données Mongo qui va pouvoir stocker localement et avec persistance les données saisies dans l'application Node.
+Le conteneur MongoDB va nous permettre de créer un sevreur de base de données Mongo qui va pouvoir stocker localement et avec persistance les données saisies dans l'application Node. Il est défini dans le fichier docker-compose.mongodb.yml pour pouvoir éviter les erreurs de créations de subnet, pour repsecter les bonnes pratiques Docker ainsi que pour l'appeler plus aisément.  
 
 Il prend la forme suivante : 
 
 ```
- mongo:
-    container_name: mongo
-    image: mongo
-    ports:
-      - '27017:27017'
+   
+version: "2.2"
+services:
+
+  mongodb:
+    image: mongo:3.5.13-jessie
+    container_name: metricbeat-mongodb
+    networks:
+      - mongodb
+
+networks:
+  mongodb:
+    external:
+      name: metricbeat
 ```
 
-Nous récupérons l'image docker mongo et nous ouvrons le port 27017 qui est le port naturel de Mongo. 
+Nous récupérons l'image docker mongo et nous ouvrons le port 27017 qui est le port naturel de Mongo. Nous créeons un sous réseau appelé mongodb qui est associé au réseau principal nommé Metribeat dont tous les conteneurs principaux dépendent. 
+
+
+## Metricbeat
+
+Le conteneur Metricbeat nous permet de récupérer et de renvoyer des métriques à Kibana. 
+
+La configuration prend la forme suivante :
+
+```
+ metricbeat:
+   build: ./metricbeat
+   command: -e
+   volumes:
+     - ./metricbeat/metricbeat.yml:/metricbeat/metricbeat.yml
+   depends_on:
+     - elasticsearch
+   environment:
+    - "WAIT_FOR_HOSTS=elasticsearch:9200 kibana:5601"
+    - "HOST_ELASTICSEARCH=elasticsearch:9200"
+    - "HOST_KIBANA=kibana:5601"
+   networks:
+    - metricbeat
+
+ metricbeat-host:
+   build:
+     context: ./metricbeat
+     args:
+        - METRICBEAT_FILE=metricbeat-host.yml
+   container_name: metricbeat-metricbeat-host
+   command: -system.hostfs=/hostfs
+   volumes:
+     - /proc:/hostfs/proc:ro
+     - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+     - /:/hostfs:ro
+     - /var/run/docker.sock:/var/run/docker.sock
+   environment:
+     - "WAIT_FOR_HOSTS=elasticsearch:9222 kibana:5666"
+     - "HOST_ELASTICSEARCH=elasticsearch:9222"
+     - "HOST_KIBANA=kibana:5666"
+   extra_hosts:
+     - "elasticsearch:172.22.0.1"
+     - "kibana:172.22.0.1" 
+   network_mode: host
+```
+
+Metricbeat a besoin de deux conteneur pour fonctionner. 
+
+Le premier conteneur appelé "metricbeat" permet de lancer metricbeat et nous permettra de récuper les métriques MongoDB. Il depend d'ElastiSearch et a besoin que les conteneurs Elasticsearch et Kibana soient lancés pour pouvoir s'y connecter. 
+
+La commande volume va nous permettre de renvoyer la configuration des modules de metricbeat dans son conteneur. La confiration prend la forme suivante : 
+
+```
+metricbeat.modules:
+
+#------------------------------- MongoDB Module -------------------------------
+
+- module: mongodb
+  enabled: true
+  metricsets: ["dbstats", "status"]
+  period: 5s
+  hosts: ["mongodb:27017"]
+
+#-------------------------- Elasticsearch output ------------------------------
+output.elasticsearch:
+  username: "metricbeat_anonymous_user"
+  #password: ""
+  hosts: ["${HOST_ELASTICSEARCH}"]
+
+setup.kibana:
+  host: "${HOST_KIBANA}"
+
+#============================== Dashboards =====================================
+# These settings control loading the sample dashboards to the Kibana index. Loading
+# the dashboards is disabled by default and can be enabled either by setting the
+# options here, or by using the `-setup` CLI flag.
+setup.dashboards.enabled: true
+
+logging.level: warning
+logging.to_files: true
+logging.to_syslog: false
+logging.files:
+  path: /var/log/metricbeat
+  name: metricbeat.log
+  keepfiles: 2
+  permissions: 0644
+  
+````
+
+Il nous permet de déclarer le module mongodb et donc d'indiquer les métriques que nous souhaitons récupérer ainsi que l'host de la base de données. Mais également de lui indiquer les hosts kibana et elasticsearch que nous avons pu lui donner lors de sa configuration avec la commande environnement. Il nous permet également d'envoyer tous les dashboards associés à Kibana qui nous permettront une visualisation graphique des données receuillies.
+
+
+Le second conteneur appelé "metricbeat-host" va nous permettre de monitorer nos hosts : ElasticSearch et Kibana mais également de pouvoir récuperer des métriques Docker concernant nos conteneurs. Il va aussi nous permettre d'accèder directement à Kibana depuis les conteneurs via la commande extra_hosts qui indiques les adresses IP de chacun des conteneurs. Tout comme le premier nous allons pouvoir donner sa configuraiton à son conteneur 
+
+La configuration prend la forme suivante : 
+
+```
+metricbeat.modules:
+
+#------------------------------- System Module -------------------------------
+- module: system
+  metricsets: ["cpu", "load", "filesystem", "fsstat", "memory", "network", "process", "core", "diskio", "socket"]
+  period: 5s
+  enabled: true
+  processes: ['.*']
+
+  cpu.metrics:  ["percentages"]
+  core.metrics: ["percentages"]
+
+#------------------------------- Docker Module -------------------------------
+- module: docker
+  metricsets: ["container", "cpu", "diskio", "healthcheck", "info", "memory", "network"]
+  hosts: ["unix:///var/run/docker.sock"]
+  enabled: true
+  period: 5s
+
+#-------------------------- Elasticsearch output ------------------------------
+output.elasticsearch:
+  #username: "metricbeat_anonymous_user"
+  #password: ""
+  hosts: ["${HOST_ELASTICSEARCH}"]
+
+setup.kibana:
+  host: "${HOST_KIBANA}"
+
+#============================== Dashboards =====================================
+# These settings control loading the sample dashboards to the Kibana index. Loading
+# the dashboards is disabled by default and can be enabled either by setting the
+# options here, or by using the `-setup` CLI flag.
+setup.dashboards.enabled: true
+
+logging.level: warning
+logging.to_files: true
+logging.to_syslog: false
+logging.files:
+  path: /var/log/metricbeat
+  name: metricbeat.log
+  keepfiles: 2
+  permissions: 0644
+
+```
+Ce fichier reprend le même principe que le précedent, nous indiquons les métriques system et Docker que nous souhaitons. Il nous permet également d'envoyer tous les dashboards associés à Kibana qui nous permettront une visualisation graphique des données receuillies.
+
+
+metricbeat/entrypoint.sh
+
+Ce script va nous permettre de mieux visualiser la bonne connexion de notre conteneur à ElastiSaerch et Kibana.
+
+```
+#!/usr/bin/env bash
+
+wait_single_host() {
+  local host=$1
+  shift
+  local port=$1
+  shift
+
+  echo "==> Check host ${host}:${port}"
+  while ! nc ${host} ${port} > /dev/null 2>&1 < /dev/null; do echo "   --> Waiting for ${host}:${port}" && sleep 1; done;
+}
+
+wait_all_hosts() {
+  if [ ! -z "$WAIT_FOR_HOSTS" ]; then
+    local separator=':'
+    for _HOST in $WAIT_FOR_HOSTS ; do
+        IFS="${separator}" read -ra _HOST_PARTS <<< "$_HOST"
+        wait_single_host "${_HOST_PARTS[0]}" "${_HOST_PARTS[1]}"
+    done
+  else
+    echo "IMPORTANT : Waiting for nothing because no $WAIT_FOR_HOSTS env var defined !!!"
+  fi
+}
+
+wait_all_hosts
+
+while ! curl -s -X GET ${HOST_ELASTICSEARCH}/_cluster/health\?wait_for_status\=yellow\&timeout\=60s | grep -q '"status":"yellow"'
+do
+    echo "==> Waiting for cluster YELLOW status" && sleep 1
+done
+
+echo ""
+echo "Cluster is YELLOW"
+echo ""
+
+
+bash -c "/usr/local/bin/docker-entrypoint $*"
+```
+
+
+
 
 
 
