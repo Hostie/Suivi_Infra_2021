@@ -155,6 +155,128 @@ Le docker-compose.yml prend la forme suivante :
 
 
 ```
+version: '3'
+ 
+services:
+ traefik:
+    restart: unless-stopped
+    image: traefik:v2.0.2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+      
+    labels:
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.middlewares.https_redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.https_redirect.redirectscheme.permanent=true"
+      - "traefik.http.routers.http_catchall.rule=HostRegexp(`{any:.+}`)"
+      - "traefik.http.routers.http_catchall.entrypoints=http"
+      - "traefik.http.routers.http_catchall.middlewares=https_redirect"
+    volumes:
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./traefik/tls.yml:/etc/traefik/tls.yml
+      - /var/run/docker.sock:/var/run/docker.sock
+      - certs:/etc/ssl/traefik
+    networks:
+      - metricbeat 
+
+ elasticsearch:
+   build : ./elasticsearch
+   ports: 
+    - '9222:9200'
+   container_name: metricbeat-elasticsearch
+   environment:
+     - "discovery.type=single-node"
+     - cluster.name=docker-cluster
+     - bootstrap.memory_lock=true
+     - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+   networks:
+     - metricbeat
+   volumes:
+     - ./config/usr/share/elasticsearch/config/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+     
+ kibana:
+   build : ./kibana
+   container_name: metricbeat-kibana
+   ports: 
+    - '5666:5601'
+   environment:
+     SERVER_NAME : kibana
+     ELASTICSEARCH_URL : http://elasticsearch:9200
+   volumes:
+    - ./config/opt/kibana/config/kibana.yml:/opt/kibana/config/kibana.yml:ro
+   labels:
+     - "traefik.http.routers.blog.tls=true"  
+   networks:
+     - metricbeat
+
+ metricbeat:
+   build: ./metricbeat
+   command: -e
+   volumes:
+     - ./metricbeat/metricbeat.yml:/metricbeat/metricbeat.yml
+   depends_on:
+     - elasticsearch
+   environment:
+    - "WAIT_FOR_HOSTS=elasticsearch:9200 kibana:5601"
+    - "HOST_ELASTICSEARCH=elasticsearch:9200"
+    - "HOST_KIBANA=kibana:5601"
+   networks:
+    - metricbeat
+
+ metricbeat-host:
+   build:
+     context: ./metricbeat
+     args:
+        - METRICBEAT_FILE=metricbeat-host.yml
+   container_name: metricbeat-metricbeat-host
+   command: -system.hostfs=/hostfs
+   volumes:
+     - /proc:/hostfs/proc:ro
+     - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+     - /:/hostfs:ro
+     - /var/run/docker.sock:/var/run/docker.sock
+   environment:
+     - "WAIT_FOR_HOSTS=elasticsearch:9222 kibana:5666"
+     - "HOST_ELASTICSEARCH=elasticsearch:9222"
+     - "HOST_KIBANA=kibana:5666"
+   extra_hosts:
+     - "elasticsearch:172.22.0.1" # The IP of docker0 interface to access host from container
+     - "kibana:172.22.0.1" # The IP of docker0 interface to access host from container
+   network_mode: host
+
+ reverse-proxy-https-helper:
+   image: alpine
+   command: sh -c "cd /etc/ssl/traefik
+      && wget traefik.me/cert.pem -O cert.pem
+      && wget traefik.me/privkey.pem -O privkey.pem"
+   volumes:
+     - certs:/etc/ssl/traefik
+
+ app:
+   container_name: docker-node-mongo
+   restart: unless-stopped
+   build: ./node
+   ports:
+     - '3000:3000'
+   external_links:
+     - mongodb
+    networks:
+     - mongodb
+     
+volumes:
+   esdata:
+     driver: local
+   metricbeat-data01:
+     driver: local
+   certs:
+
+#Réseau commun à tous les conteneurs
+networks:
+  metricbeat:
+    external:
+      name: metricbeat
 
 ```
 
