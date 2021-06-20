@@ -27,6 +27,8 @@ services:
 
  elasticsearch:
    build : ./elasticsearch
+   ports: 
+    - '9200:9200'
    container_name: elasticsearch
    environment:
      - "discovery.type=single-node"
@@ -38,6 +40,8 @@ services:
  kibana:
    build : ./kibana
    container_name: kibana
+   ports: 
+    - '5601:5601'
    environment:
      SERVER_NAME : kibana
      ELASTICSEARCH_URL : http://elasticsearch:9200
@@ -47,16 +51,41 @@ services:
      - net
 
  metricbeat:
-   build: .
-   restart: unless-stopped
-   pid: host
+   build: ./metricbeat
+   command: -e
    volumes:
      - ./metricbeat.yml:/metricbeat/metricbeat.yml
    depends_on:
      - elasticsearch
    environment:
-    - ELASTICSEARCH_URL=http://elasticsearch:9200
- 
+    - "WAIT_FOR_HOSTS=elasticsearch:9200 kibana:5601"
+    - "HOST_ELASTICSEARCH=elasticsearch:9200"
+    - "HOST_KIBANA=kibana:5601"
+   networks:
+    - net
+
+ metricbeat-host:
+   build:
+     context: ./metricbeat
+     args:
+        - METRICBEAT_FILE=metricbeat-host.yml
+   container_name: metricbeat-metricbeat-host
+   command: -system.hostfs=/hostfs
+   volumes:
+     - /proc:/hostfs/proc:ro
+     - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+     - /:/hostfs:ro
+     - /var/run/docker.sock:/var/run/docker.sock
+   environment:
+     - "WAIT_FOR_HOSTS=elasticsearch:9200 kibana:5601"
+     - "HOST_ELASTICSEARCH=elasticsearch:9200"
+     - "HOST_KIBANA=kibana:5601"
+   extra_hosts:
+     - "elasticsearch:0.0.0.0" # The IP of docker0 interface to access host from container
+     - "kibana:0.0.0.0" # The IP of docker0 interface to access host from container
+   networks:
+     - net
+
  reverse-proxy-https-helper:
    image: alpine
    command: sh -c "cd /etc/ssl/traefik
@@ -79,7 +108,6 @@ services:
     image: mongo
     ports:
       - '27017:27017'
-    
  
 volumes:
    esdata:
@@ -91,3 +119,4 @@ volumes:
 #Réseau commun à tous les conteneurs
 networks:
    net:
+    

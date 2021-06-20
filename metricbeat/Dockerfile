@@ -1,25 +1,23 @@
-FROM frolvlad/alpine-glibc
 
+FROM docker.elastic.co/beats/metricbeat:6.0.0
 
-ENV METRICBEAT_VERSION=5.4.0
+# The file to monitor the host is different from the file to monitor docker services.ADD
+# So we pass the filename at build time to choose the target (host or services) of the image built.
+ARG METRICBEAT_FILE=./metricbeat.yml
+COPY ${METRICBEAT_FILE} /usr/share/metricbeat/metricbeat.yml
 
-RUN apk add --no-cache \
-      ca-certificates \
-      curl
+USER root
 
-RUN curl -L -O https://artifacts.elastic.co/downloads/beats/metricbeat/metricbeat-${METRICBEAT_VERSION}-linux-x86_64.tar.gz && \
-    tar -xvvf metricbeat-${METRICBEAT_VERSION}-linux-x86_64.tar.gz && \
-    mv metricbeat-${METRICBEAT_VERSION}-linux-x86_64/ /metricbeat && \
-    mv /metricbeat/metricbeat.yml /metricbeat/metricbeat.example.yml && \
-    mv /metricbeat/metricbeat /bin/metricbeat && \
-    chmod +x /bin/metricbeat && \
-    mkdir -p /metricbeat/config /metricbeat/data && \
-    rm metricbeat-${METRICBEAT_VERSION}-linux-x86_64.tar.gz\
-    /bin/metricbeat modules enable mongodb
-    
-WORKDIR /metricbeat
+RUN yum -y install nc
 
-ADD start.sh /metricbeat/start.sh
+RUN mkdir /var/log/metricbeat \
+    && chown metricbeat /usr/share/metricbeat/metricbeat.yml \
+    && chmod go-w /usr/share/metricbeat/metricbeat.yml \
+    && chown metricbeat /var/log/metricbeat
 
-ENTRYPOINT /metricbeat/start.sh
+COPY entrypoint.sh /usr/local/bin/custom-entrypoint
+RUN chmod +x /usr/local/bin/custom-entrypoint
 
+USER metricbeat
+
+ENTRYPOINT ["/usr/local/bin/custom-entrypoint"]
