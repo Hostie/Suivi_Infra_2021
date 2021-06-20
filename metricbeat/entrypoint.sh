@@ -30,7 +30,7 @@ do
 done
 
 echo ""
-echo "Cluster is YELLOW. Fine ! (But you could maybe try to have it GREEN ;))"
+echo "Cluster is YELLOW"
 echo ""
 
 
