@@ -1,7 +1,6 @@
 # =========================================== MONITORING ===============================================================
 
 # ----------------------- SETUP -------------------------------------------------------------------
-# Useful to configure a few things on the host machien to allow elasticsearch and metricbeat to work.
 setup:
 	@./scripts/setup.sh
 
