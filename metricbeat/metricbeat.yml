@@ -1,52 +1,12 @@
 metricbeat.modules:
 
-#------------------------------- RabbitMQ Module -------------------------------
-- module: rabbitmq
-  enabled: true
-  metricsets: ["node"]
-  period: 5s
-  hosts: ["rabbitmq:15672"]
-  username: guest
-  password: guest
-
-#------------------------------- MySQL Module -------------------------------
-- module: mysql
-  enabled: true
-  metricsets: ["status"]
-  period: 5s
-  hosts: ["tcp(mysql:3306)/"]
-  username: root
-  password: root
-
 #------------------------------- MongoDB Module -------------------------------
 
 - module: mongodb
   enabled: true
-  metricsets: ["status", "dbstats"]
+  metricsets: ["dbstats", "status"]
   period: 5s
-  hosts: ["localhost:27017"]
-
-#------------------------------- MongoDB Module -------------------------------
-- module: apache
-  enabled: true
-  metricsets: ["status"]
-  period: 5s
-  hosts: ["http://apache"]
-
-#------------------------------- Redis Module -------------------------------
-- module: redis
-  enabled: true
-  metricsets: ["info", "keyspace"]
-  period: 5s
-  hosts: ["redis:6379"]
-
-#------------------------------- Nginx Module -------------------------------
-- module: nginx
-  enabled: true
-  metricsets: ["stubstatus"]
-  period: 5s
-  hosts: ["http://nginx"]
-  server_status_path: "nginx_status"
+  hosts: ["mongodb:27017"]
 
 #-------------------------- Elasticsearch output ------------------------------
 output.elasticsearch:
