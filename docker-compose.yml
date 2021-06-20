@@ -17,8 +17,8 @@ services:
       - "traefik.http.routers.http_catchall.entrypoints=http"
       - "traefik.http.routers.http_catchall.middlewares=https_redirect"
     volumes:
-      - ./traefik.yml:/etc/traefik/traefik.yml
-      - ./tls.yml:/etc/traefik/tls.yml
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./traefik/tls.yml:/etc/traefik/tls.yml
       - /var/run/docker.sock:/var/run/docker.sock
       - certs:/etc/ssl/traefik
     networks:
@@ -87,8 +87,8 @@ services:
      - "HOST_ELASTICSEARCH=elasticsearch:9222"
      - "HOST_KIBANA=kibana:5666"
    extra_hosts:
-     - "elasticsearch:172.18.0.1" # The IP of docker0 interface to access host from container
-     - "kibana:172.18.0.1" # The IP of docker0 interface to access host from container
+     - "elasticsearch:172.22.0.1" # The IP of docker0 interface to access host from container
+     - "kibana:172.22.0.1" # The IP of docker0 interface to access host from container
    network_mode: host
 
  reverse-proxy-https-helper:
@@ -102,7 +102,7 @@ services:
  #app:
  #   container_name: docker-node-mongo
   #  restart: unless-stopped
-   # build: .
+   # build: ./node
    # ports:
     #  - '3000:3000'
     #external_links:
