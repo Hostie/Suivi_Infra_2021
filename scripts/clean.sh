@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-## Remove all containers related to metricbeat
 CONTAINERS=`docker ps | grep metricbeat | awk '{print $1}'`
 [ ! -z "${CONTAINERS}" ] && docker rm -f ${CONTAINERS}
 echo "All METRICBEAT containers removed !"
