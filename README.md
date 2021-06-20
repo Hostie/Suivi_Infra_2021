@@ -110,7 +110,9 @@ install: clean setup start-monitoring-host start-monitoring start-all
 
 Ici l'ensemble des raccourcis s'executent de la manière suivante. Nous commencons la commande par l'entrée ```make``` auquelle nous rajouterons la commande associée.
 
-Par exemple si je souhaite lancer mon conteneur MongoDB il nous suffira de rentrer la commande ``` make start-mongodb ```
+Par exemple si je souhaite lancer mon conteneur MongoDB il nous suffira de rentrer la commande
+
+``` make start-mongodb ```
 
 
 ### Les scripts 
